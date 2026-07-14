@@ -1,0 +1,844 @@
+/* 🏡 우리집 가계부 디자인 시스템 - Premium Minimal Design */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap');
+
+:root {
+  /* 라이트 테마 토큰 */
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+  
+  --border-color: #e2e8f0;
+  
+  --accent-color: #4f46e5;       /* 슬레이트 퍼플 */
+  --accent-light: #e0e7ff;
+  
+  --income-color: #10b981;       /* 에메랄드 그린 */
+  --income-light: #d1fae5;
+  
+  --expense-color: #ef4444;      /* 로즈 레드 */
+  --expense-light: #fee2e2;
+  
+  --warning-color: #f59e0b;
+  
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+}
+
+[data-theme='dark'] {
+  /* 다크 테마 토큰 */
+  --bg-primary: #0b0f19;
+  --bg-secondary: #161e2e;
+  --bg-tertiary: #1f293d;
+  
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  
+  --border-color: #2d3748;
+  
+  --accent-color: #6366f1;
+  --accent-light: rgba(99, 102, 241, 0.15);
+  
+  --income-color: #10b981;
+  --income-light: rgba(16, 185, 129, 0.12);
+  
+  --expense-color: #f43f5e;
+  --expense-light: rgba(244, 63, 94, 0.12);
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+/* 레이아웃 구조 */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* 헤더 스타일 */
+.app-header {
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
+  transition: background-color var(--transition-normal), border-color var(--transition-normal);
+}
+
+.app-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-nav {
+  display: flex;
+  gap: 6px;
+}
+
+.nav-tab-item {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.nav-tab-item:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.nav-tab-item.active {
+  background-color: var(--accent-light);
+  color: var(--accent-color);
+}
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.theme-toggle:hover {
+  background-color: var(--bg-tertiary);
+}
+
+/* 메인 콘텐츠 */
+.main-content {
+  flex: 1;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* 폼 스타일 */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.form-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.form-input, .form-select {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.form-input:focus, .form-select:focus {
+  border-color: var(--accent-color);
+}
+
+/* 버튼 */
+.btn {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  outline: none;
+  text-align: center;
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  border: 1px solid var(--accent-color);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  background-color: var(--bg-tertiary);
+}
+
+/* 카드 및 컴포넌트 */
+.card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 10px;
+}
+
+/* 배지 */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.badge.income {
+  background-color: var(--income-light);
+  color: var(--income-color);
+}
+
+.badge.expense {
+  background-color: var(--expense-light);
+  color: var(--expense-color);
+}
+
+/* 금액 */
+.amount {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+}
+
+.amount.income {
+  color: var(--income-color);
+}
+
+.amount.expense {
+  color: var(--expense-color);
+}
+
+/* 프로그레스 바 */
+.progress-bar-container {
+  background-color: var(--bg-tertiary);
+  border-radius: 10px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+
+/* 4열 스프레드시트 엑셀 스타일 테이블 그리드 (2줄 2칸 2x2 배치) */
+.transactions-grid-4 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+/* 확장(1열 전체보기) 모드일 때 컬럼 너비를 유연하게 확보 */
+.excel-table.expanded {
+  table-layout: auto;
+}
+
+.excel-table th, .excel-table td {
+  border: 1px solid var(--border-color);
+  padding: 8px 10px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.excel-table th {
+  background-color: var(--bg-tertiary);
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.excel-table td {
+  color: var(--text-primary);
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* 정중앙 모달 팝업 뒷배경 레이어 */
+.bottom-sheet-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* 정중앙 팝업 창 */
+.bottom-sheet {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 24px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  animation: scaleIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 호버 시 흐릿하게 보이게 돕는 클래스 */
+.list-item-hover {
+  transition: background-color var(--transition-fast);
+}
+
+.list-item-hover:hover {
+  background-color: var(--bg-tertiary);
+}
+
+/* 리스트 아이템 레이아웃 */
+.list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list-item {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all var(--transition-fast);
+}
+
+.list-item:hover {
+  border-color: var(--accent-color);
+}
+
+/* 대시보드 2단 배치 분할 */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.dashboard-column {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.layout-with-sidebar {
+  display: grid;
+  gap: 20px;
+}
+
+/* 모바일 뷰 강제 전환 스타일 (.mobile-mode 클래스 추가 시 가로폭 500px 강제 프레임 압축) */
+.app-container.mobile-mode {
+  max-width: 500px;
+  margin: 0 auto;
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  box-shadow: var(--shadow-lg);
+  min-height: 100vh;
+}
+
+/* 모바일 뷰 강제 지정 시 헤더 개편 */
+.app-container.mobile-mode .app-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.app-container.mobile-mode .app-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 16px;
+}
+
+.app-container.mobile-mode .header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.app-container.mobile-mode .header-nav {
+  overflow-x: auto;
+  white-space: nowrap;
+  width: 100%;
+  max-width: 100% !important;
+  padding-bottom: 6px;
+  display: flex;
+  gap: 4px;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.app-container.mobile-mode .header-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.app-container.mobile-mode .nav-tab-item {
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  flex-shrink: 0;
+}
+
+.app-container.mobile-mode .header-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+/* 실제 모바일 폭인 경우의 헤더 개편 */
+@media (max-width: 768px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+
+  .app-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    font-size: 16px;
+  }
+
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .header-nav {
+    overflow-x: auto;
+    white-space: nowrap;
+    width: 100%;
+    max-width: 100% !important;
+    padding-bottom: 6px;
+    display: flex;
+    gap: 4px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .header-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-tab-item {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+    flex-shrink: 0;
+  }
+
+  .header-controls {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    width: 100%;
+  }
+}
+
+.app-container.mobile-mode .main-content {
+  padding: 12px;
+}
+
+.app-container.mobile-mode .dashboard-grid {
+  grid-template-columns: 1fr;
+}
+
+.app-container.mobile-mode .layout-with-sidebar {
+  grid-template-columns: 1fr !important;
+}
+
+.app-container.mobile-mode .transactions-grid-4 {
+  grid-template-columns: 1fr;
+}
+
+.app-container.mobile-mode .card {
+  padding: 14px;
+}
+
+/* 애니메이션 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.editable-cell {
+  position: relative;
+}
+
+.editable-cell:hover::after {
+  content: '✏️';
+  font-size: 9px;
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.6;
+}
+
+/* 📅 모바일 친화 공동 캘린더 & 할 일 CSS */
+.todo-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .todo-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.calendar-card {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-day-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 6px 0;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background-color: var(--bg-secondary);
+  cursor: pointer;
+  padding: 6px 2px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.calendar-day:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.calendar-day.empty {
+  background: none;
+  border: none;
+  cursor: default;
+}
+
+.calendar-day.today {
+  border-color: var(--accent-color);
+  font-weight: 800;
+}
+
+.calendar-day.selected {
+  background-color: var(--accent-color) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.25);
+}
+
+.calendar-day-num {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.calendar-todo-dots {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  height: 5px;
+}
+
+.calendar-todo-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: var(--accent-color);
+}
+
+.calendar-day.selected .calendar-todo-dot {
+  background-color: #ffffff;
+}
+
+/* 할 일 리스트 패널 */
+.todo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  transition: all 0.2s ease, transform 0.1s ease;
+  cursor: grab;
+  user-select: none;
+}
+
+.todo-item:hover {
+  border-color: var(--accent-light);
+}
+
+.todo-item:active {
+  cursor: grabbing;
+}
+
+.todo-item.dragging {
+  opacity: 0.4;
+  border: 2px dashed var(--accent-color);
+  background-color: var(--bg-tertiary);
+}
+
+.todo-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.todo-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+}
+
+.todo-text.completed {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+.todo-meta {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.todo-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* 터치 친화형 둥근 체크박스 */
+.todo-checkbox {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.todo-checkbox.checked {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.todo-checkbox.checked::after {
+  content: '✓';
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* 🔄 모바일 새로고침 버튼 반응형 스위칭 (PC 뷰에서는 숨김) */
+.refresh-btn-mobile {
+  display: none !important;
+}
+
+.app-container.mobile-mode .refresh-btn-mobile {
+  display: flex !important;
+}
+
+@media (max-width: 768px) {
+  .refresh-btn-mobile {
+    display: flex !important;
+  }
+}
+
+/* 🔄 카드값 정산판 및 와이드 테이블 텍스트 래핑 보완 */
+.excel-table.expanded td {
+  white-space: normal;
+  word-break: break-all;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1.0s linear infinite;
+}
+
+/* 📊 엑셀 메모 표시용 모서리 삼각형 인디케이터 */
+.memo-indicator-cell {
+  position: relative !important;
+}
+
+.memo-corner-triangle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 7px 7px 0;
+  border-color: transparent var(--expense-color) transparent transparent; /* 가계부 빨간색 계열 */
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* 🎛️ 얇고 고급스러운 둥근 스크롤바 스타일링 */
+.table-responsive::-webkit-scrollbar,
+.bottom-sheet::-webkit-scrollbar {
+  height: 5px; /* 모바일/데스크톱 가릴 것 없이 얇고 세련된 두께 */
+  width: 5px;
+}
+
+.table-responsive::-webkit-scrollbar-track,
+.bottom-sheet::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+  border-radius: 3px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb,
+.bottom-sheet::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover,
+.bottom-sheet::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}

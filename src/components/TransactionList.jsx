@@ -1,0 +1,840 @@
+import React, { useState, useEffect } from 'react';
+import { dbService } from '../dbService';
+import { Plus, Trash2, Edit2, Maximize2, Minimize2, X, ChevronLeft, ChevronRight } from 'lucide-react';
+
+export default function TransactionList({ currentMonth, setCurrentMonth, currentUser, startDay }) {
+  const [incomes, setIncomes] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [wallets, setWallets] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // 팝업 입력 모달용 및 메모 상태
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [name, setName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState('');
+  const [memo, setMemo] = useState('');
+  const [txType, setTxType] = useState('expense'); // expense, income, wallet_charge
+  const [category, setCategory] = useState('생활비');
+  const [method, setMethod] = useState('카드결제');
+  const [targetWalletId, setTargetWalletId] = useState('');
+
+  // 1열 확대 토글 ('fixed', 'living', 'joint', 'kids', null)
+  const [expandedCategory, setExpandedCategory] = useState(null);
+
+  // 수정 모달 상태
+  const [editingItem, setEditingItem] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editMemo, setEditMemo] = useState('');
+  const [editCategory, setEditCategory] = useState('생활비');
+  const [editMethod, setEditMethod] = useState('카드결제');
+  const [editType, setEditType] = useState('expense');
+
+  const handlePrevMonth = () => {
+    const [y, m] = currentMonth.split('-').map(Number);
+    const prevDate = new Date(y, m - 2, 1);
+    setCurrentMonth(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const handleNextMonth = () => {
+    const [y, m] = currentMonth.split('-').map(Number);
+    const nextDate = new Date(y, m, 1);
+    setCurrentMonth(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [incs, txs, wts, fetchedFixed] = await Promise.all([
+        dbService.fetchIncomes(currentMonth, startDay),
+        dbService.fetchTransactions(currentMonth, startDay),
+        dbService.fetchWallets(),
+        dbService.fetchFixedExpenses()
+      ]);
+
+      // ⚡ 고정 입출금 자동화 스케줄러 비동기 실행 (신규 건 자동 등록 후 재조회)
+      const { runFixedExpensesAutomation } = await import('../utils/automation');
+      const automated = await runFixedExpensesAutomation(currentMonth, fetchedFixed, txs, incs);
+
+      if (automated.length > 0) {
+        const [nextIncs, nextTxs] = await Promise.all([
+          dbService.fetchIncomes(currentMonth, startDay),
+          dbService.fetchTransactions(currentMonth, startDay)
+        ]);
+        setIncomes(nextIncs);
+        setTransactions(nextTxs);
+      } else {
+        setIncomes(incs);
+        setTransactions(txs);
+      }
+
+      setWallets(wts);
+      if (wts.length > 0 && !targetWalletId) {
+        setTargetWalletId(wts[0].id);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+    // 오늘 날짜 세팅
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    setDate(`${y}-${m}-${d}`);
+  }, [currentMonth, startDay]);
+
+  const handleTypeChange = (type) => {
+    setTxType(type);
+    if (type === 'income') {
+      setCategory('고정수입');
+      setMethod('계좌이체');
+    } else if (type === 'wallet_charge') {
+      setCategory('지갑충전');
+      setMethod('계좌이체');
+    } else {
+      setCategory('생활비');
+      setMethod('카드결제');
+    }
+  };
+
+  const handleAmountChange = (e) => {
+    const raw = e.target.value.replace(/[^0-9]/g, '');
+    setAmount(raw ? Number(raw).toLocaleString('ko-KR') : '');
+  };
+
+  const handleEditAmountChange = (e) => {
+    const raw = e.target.value.replace(/[^0-9]/g, '');
+    setEditAmount(raw ? Number(raw).toLocaleString('ko-KR') : '');
+  };
+
+  const handleAddSubmit = async (e) => {
+    e.preventDefault();
+    const numericAmount = parseInt(amount.replace(/,/g, ''), 10);
+    if (!name || isNaN(numericAmount) || numericAmount <= 0) {
+      alert('올바른 명칭과 금액을 입력하세요.');
+      return;
+    }
+
+    try {
+      if (txType === 'income') {
+        const newIncome = {
+          name,
+          amount: numericAmount,
+          date,
+          memo
+        };
+        await dbService.addIncome(newIncome);
+      } else {
+        const newTx = {
+          name,
+          amount: numericAmount,
+          date,
+          memo,
+          category: txType === 'wallet_charge' ? '지갑충전' : category,
+          method: txType === 'wallet_charge' ? '계좌이체' : method,
+          type: txType,
+          walletId: txType === 'wallet_charge' ? targetWalletId : null
+        };
+        
+        await dbService.addTransaction(newTx);
+
+        // 페이 및 지갑 결제수단일 경우 실시간 지갑 차감/충전 반영
+        if (txType === 'wallet_charge' && targetWalletId) {
+          const wallet = wallets.find(w => w.id === targetWalletId);
+          if (wallet) {
+            await dbService.updateWalletBalance(targetWalletId, wallet.balance + numericAmount);
+          }
+        } else if (txType === 'expense' && (method.includes('상품권') || method.includes('페이'))) {
+          const matchedWallet = wallets.find(w => method.includes(w.name.substring(0, 4)) || w.name.includes(method));
+          if (matchedWallet) {
+            await dbService.updateWalletBalance(matchedWallet.id, Math.max(0, matchedWallet.balance - numericAmount));
+          }
+        }
+      }
+
+      setName('');
+      setAmount('');
+      setMemo('');
+      setShowAddModal(false);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert('등록에 실패했습니다.');
+    }
+  };
+
+  const handleOpenEdit = (item, type) => {
+    setEditingItem({ ...item, type: type || 'expense' });
+    setEditName(item.name);
+    setEditAmount(item.amount.toLocaleString('ko-KR'));
+    setEditDate(item.date);
+    setEditMemo(item.memo || '');
+    setEditCategory(item.category || '생활비');
+    setEditMethod(item.method || '카드결제');
+    setEditType(type || 'expense');
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    const newAmt = parseInt(editAmount.replace(/,/g, ''), 10);
+    if (!editName || isNaN(newAmt) || newAmt <= 0) {
+      alert('올바른 명칭과 금액을 입력하세요.');
+      return;
+    }
+
+    try {
+      const diff = newAmt - editingItem.amount;
+
+      if (editingItem.type === 'income') {
+        const payload = {
+          name: editName,
+          amount: newAmt,
+          date: editDate,
+          memo: editMemo
+        };
+        await dbService.updateIncome(editingItem.id, payload);
+      } else {
+        const payload = {
+          name: editName,
+          amount: newAmt,
+          date: editDate,
+          memo: editMemo,
+          category: editCategory,
+          method: editMethod,
+          type: editingItem.type || 'expense'
+        };
+        await dbService.updateTransaction(editingItem.id, payload);
+
+        if (diff !== 0) {
+          if (editingItem.type === 'wallet_charge' && editingItem.walletId) {
+            const wallet = wallets.find(w => w.id === editingItem.walletId);
+            if (wallet) {
+              await dbService.updateWalletBalance(editingItem.walletId, Math.max(0, wallet.balance + diff));
+            }
+          } else if (editMethod.includes('상품권') || editMethod.includes('페이')) {
+            const matchedWallet = wallets.find(w => editMethod.includes(w.name.substring(0, 4)) || w.name.includes(editMethod));
+            if (matchedWallet) {
+              await dbService.updateWalletBalance(matchedWallet.id, Math.max(0, matchedWallet.balance - diff));
+            }
+          }
+        }
+      }
+
+      setEditingItem(null);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert('수정 중 에러가 발생했습니다.');
+    }
+  };
+
+  const handleDelete = async (item, type) => {
+    if (!confirm(`'${item.name}' 내역을 정말 삭제하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      if (type === 'income') {
+        await dbService.deleteIncome(item.id);
+      } else {
+        await dbService.deleteTransaction(item.id);
+
+        if (item.type === 'wallet_charge' && item.walletId) {
+          const wallet = wallets.find(w => w.id === item.walletId);
+          if (wallet) {
+            await dbService.updateWalletBalance(item.walletId, Math.max(0, wallet.balance - item.amount));
+          }
+        }
+        if (item.type === 'expense' && (item.method.includes('상품권') || item.method.includes('페이'))) {
+          const matchedWallet = wallets.find(w => item.method.includes(w.name.substring(0, 4)) || w.name.includes(item.method));
+          if (matchedWallet) {
+            await dbService.updateWalletBalance(matchedWallet.id, matchedWallet.balance + item.amount);
+          }
+        }
+      }
+      loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const formatWon = (num) => {
+    return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(num);
+  };
+
+  const getCategorizedData = (catName) => {
+    const list = transactions
+      .filter(t => {
+        if (catName === '열매 & 번성 & 킹콩') {
+          return (t.category === '열매 & 번성 & 킹콩' || t.category === '열매 & 킹콩') && t.type !== 'wallet_charge';
+        }
+        return t.category === catName && t.type !== 'wallet_charge';
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+    
+    let runningTotal = 0;
+    return list.map(item => {
+      runningTotal += item.amount;
+      return { ...item, runningTotal };
+    });
+  };
+
+  const openAddModal = (catName, type) => {
+    setTxType(type || 'expense');
+    setCategory(catName === 'income' ? '고정수입' : catName);
+    
+    if (type === 'income') {
+      setMethod('계좌이체');
+    } else if (type === 'wallet_charge') {
+      setMethod('계좌이체');
+    } else {
+      setMethod('카드결제');
+    }
+    
+    setName('');
+    setAmount('');
+    setMemo('');
+    
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    setDate(`${y}-${m}-${d}`);
+    
+    setShowAddModal(true);
+  };
+
+  const fixedExpensesData = getCategorizedData('공과금 및 고정지출');
+  const livingExpensesData = getCategorizedData('생활비');
+  const jointExpensesData = getCategorizedData('공동');
+  const kidsExpensesData = getCategorizedData('열매 & 번성 & 킹콩');
+
+  const totalIncome = incomes.reduce((sum, inc) => sum + inc.amount, 0);
+
+  // ⚡ 지갑 충전(wallet_charge)만 예산 계산에서 제외하며, 지역화폐 결제사용은 총 지출에 정상 합산
+  const totalExpense = transactions
+    .filter(t => t.type !== 'wallet_charge')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const renderTable = (title, dataList, catKey) => {
+    const isExpanded = expandedCategory === catKey;
+
+    return (
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+          <span style={{ fontSize: '13.5px', fontWeight: '800', color: 'var(--text-primary)' }}>{title} ({dataList.length}건)</span>
+          
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button 
+              onClick={() => setExpandedCategory(isExpanded ? null : catKey)}
+              style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+              title={isExpanded ? "축소하기" : "확대하기"}
+            >
+              {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+            <button 
+              onClick={() => openAddModal(title === '열매 & 번성 & 킹콩' ? '열매 & 번성 & 킹콩' : catKey === 'fixed' ? '공과금 및 고정지출' : catKey === 'living' ? '생활비' : '공동', 'expense')}
+              style={{ 
+                backgroundColor: 'var(--accent-color)', 
+                color: '#ffffff', 
+                border: 'none', 
+                borderRadius: 'var(--radius-sm)', 
+                padding: '4px 10px', 
+                fontSize: '11px', 
+                fontWeight: '700', 
+                cursor: 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '4px',
+                transition: 'opacity 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.opacity = 0.9}
+              onMouseOut={(e) => e.currentTarget.style.opacity = 1}
+            >
+              <Plus size={12} /> 추가
+            </button>
+          </div>
+        </div>
+
+        <div className="table-responsive" style={{ overflowX: 'auto', height: isExpanded ? '480px' : '290px', overflowY: 'auto' }}>
+          <table className="excel-table expanded" style={{ width: '100%', minWidth: '800px' }}>
+            <thead>
+              <tr>
+                <th style={{ width: '100px', textAlign: 'center' }}>날짜</th>
+                <th style={{ minWidth: '180px' }}>항목명</th>
+                <th style={{ width: '120px' }}>결제수단</th>
+                <th style={{ width: '120px', textAlign: 'right' }}>금액</th>
+                <th style={{ width: '120px', textAlign: 'right' }}>누계</th>
+                <th style={{ width: '60px', textAlign: 'center' }}>동작</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dataList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', height: isExpanded ? '410px' : '220px', verticalAlign: 'middle', color: 'var(--text-tertiary)' }}>
+                    작성된 내역이 없습니다.
+                  </td>
+                </tr>
+              ) : (
+                dataList.map(item => (
+                  <tr 
+                    key={item.id} 
+                    className="list-item-hover"
+                    onClick={() => handleOpenEdit(item, 'expense')}
+                    style={{ cursor: 'pointer' }}
+                    title="클릭하여 수정"
+                  >
+                    <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{item.date}</td>
+                    
+                    <td 
+                      className={item.memo ? "memo-indicator-cell" : ""} 
+                      title={item.memo ? `메모: ${item.memo}` : "클릭하여 수정"}
+                      style={{ fontWeight: '700' }}
+                    >
+                      {item.name}
+                      {item.isAuto && (
+                        <span style={{ fontSize: '8px', color: 'var(--income-color)', marginLeft: '4px', backgroundColor: 'var(--income-light)', padding: '1px 3px', borderRadius: '3px' }}>AUTO</span>
+                      )}
+                      {item.memo && <div className="memo-corner-triangle" />}
+                    </td>
+                    
+                    <td>
+                      <span className="badge" style={{ fontSize: '9px', padding: '1px 4px' }}>
+                        {item.method}
+                      </span>
+                    </td>
+                    
+                    <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--expense-color)' }}>
+                      {formatWon(item.amount)}
+                    </td>
+                    
+                    <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                      {formatWon(item.runningTotal)}
+                    </td>
+
+                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                        <button 
+                          onClick={() => handleOpenEdit(item, 'expense')}
+                          style={{ color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                          title="수정"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(item, 'expense')}
+                          style={{ color: 'var(--expense-color)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                          title="삭제"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  const renderGrids = () => {
+    if (expandedCategory) {
+      switch (expandedCategory) {
+        case 'fixed': return renderTable('공과금 및 고정지출', fixedExpensesData, 'fixed');
+        case 'living': return renderTable('생활비', livingExpensesData, 'living');
+        case 'joint': return renderTable('공동', jointExpensesData, 'joint');
+        case 'kids': return renderTable('열매 & 번성 & 킹콩', kidsExpensesData, 'kids');
+        default: return null;
+      }
+    }
+
+    return (
+      <div className="transactions-grid-4">
+        {renderTable('공과금 및 고정지출', fixedExpensesData, 'fixed')}
+        {renderTable('생활비', livingExpensesData, 'living')}
+        {renderTable('공동', jointExpensesData, 'joint')}
+        {renderTable('열매 & 번성 & 킹콩', kidsExpensesData, 'kids')}
+      </div>
+    );
+  };
+
+  const renderIncomeTable = () => {
+    if (expandedCategory) return null;
+
+    return (
+      <div className="card" style={{ overflow: 'hidden', padding: '16px 20px' }}>
+        <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '6px', borderBottom: '1px solid var(--border-color)' }}>
+          <span style={{ fontWeight: '800', fontSize: '14.5px', color: 'var(--income-color)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            💰 이번 달 수입 세부 명세서 ({incomes.length}건)
+          </span>
+          
+          <button 
+            onClick={() => openAddModal('income', 'income')}
+            style={{ 
+              backgroundColor: 'var(--income-color)', 
+              color: '#ffffff', 
+              border: 'none', 
+              borderRadius: 'var(--radius-sm)', 
+              padding: '4px 10px', 
+              fontSize: '11px', 
+              fontWeight: '700', 
+              cursor: 'pointer', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '4px',
+              transition: 'opacity 0.2s'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.opacity = 0.9}
+            onMouseOut={(e) => e.currentTarget.style.opacity = 1}
+          >
+            <Plus size={12} /> 추가
+          </button>
+        </div>
+        <div style={{ overflowX: 'auto', height: '290px', overflowY: 'auto' }} className="table-responsive">
+          <table className="excel-table expanded" style={{ width: '100%', minWidth: '800px' }}>
+            <thead>
+              <tr>
+                <th style={{ width: '100px', textAlign: 'center' }}>날짜</th>
+                <th style={{ minWidth: '220px' }}>수입 항목명</th>
+                <th style={{ width: '130px', textAlign: 'right' }}>금액</th>
+                <th style={{ width: '60px', textAlign: 'center' }}>동작</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incomes.length === 0 ? (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: 'center', height: '220px', verticalAlign: 'middle', color: 'var(--text-tertiary)' }}>등록된 수입 내역이 없습니다.</td>
+                </tr>
+              ) : (
+                incomes.map(item => (
+                  <tr key={item.id} className="list-item-hover" onClick={() => handleOpenEdit(item, 'income')} style={{ cursor: 'pointer' }}>
+                    <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{item.date}</td>
+                    <td 
+                      className={item.memo ? "memo-indicator-cell" : ""} 
+                      title={item.memo ? `메모: ${item.memo}` : "클릭하여 수정"}
+                      style={{ fontWeight: '700' }}
+                    >
+                      {item.name}
+                      {item.memo && <div className="memo-corner-triangle" />}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--income-color)' }}>{formatWon(item.amount)}</td>
+                    <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      <button 
+                        onClick={() => handleDelete(item, 'income')}
+                        style={{ color: 'var(--expense-color)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* 📅 월 선택 꺽쇠 컨트롤러 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '4px 10px' }}>
+            <button onClick={handlePrevMonth} className="theme-toggle" style={{ width: '26px', height: '26px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <ChevronLeft size={16} />
+            </button>
+            <span style={{ fontSize: '14px', fontWeight: '800', fontFamily: 'Outfit', minWidth: '90px', textAlign: 'center', color: 'var(--text-primary)' }}>
+              {currentMonth.split('-')[0]}년 {parseInt(currentMonth.split('-')[1])}월
+            </span>
+            <button onClick={handleNextMonth} className="theme-toggle" style={{ width: '26px', height: '26px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          <div>
+            <h2 style={{ fontSize: '18px', fontWeight: '800', margin: 0 }}>가계부 지출 명세서 (스프레드시트 뷰)</h2>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ backgroundColor: 'var(--income-light)', border: '1px solid var(--income-color)', borderRadius: 'var(--radius-md)', padding: '6px 12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <span style={{ fontSize: '10px', color: 'var(--income-color)', fontWeight: '600' }}>이번 달 총 수입</span>
+            <span style={{ fontSize: '15px', fontWeight: '700', color: 'var(--income-color)' }}>
+              {formatWon(totalIncome)}
+            </span>
+          </div>
+          <div style={{ backgroundColor: 'var(--expense-light)', border: '1px solid var(--expense-color)', borderRadius: 'var(--radius-md)', padding: '6px 12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <span style={{ fontSize: '10px', color: 'var(--expense-color)', fontWeight: '600' }}>이번 달 총 지출</span>
+            <span style={{ fontSize: '15px', fontWeight: '700', color: 'var(--expense-color)' }}>
+              {formatWon(totalExpense)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 테이블이 와이드하게 넓게 배치되도록 sidebar 구조를 걷어냄 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {renderGrids()}
+        {renderIncomeTable()}
+      </div>
+
+      {/* 팝업 등록 모달창 (Modal) */}
+      {showAddModal && (
+        <div className="bottom-sheet-overlay">
+          <div className="bottom-sheet" style={{ width: '420px', borderRadius: 'var(--radius-lg)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '800' }}>
+                가계부 {txType === 'income' ? '수입' : txType === 'wallet_charge' ? '지갑 충전' : '지출'} 내역 등록
+              </h3>
+              <button onClick={() => setShowAddModal(false)} style={{ color: 'var(--text-secondary)', cursor: 'pointer', background: 'none', border: 'none' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
+                <button 
+                  type="button"
+                  onClick={() => handleTypeChange('expense')}
+                  style={{
+                    flex: 1, padding: '6px 2px', fontSize: '11px', fontWeight: '700', borderRadius: '4px',
+                    backgroundColor: txType === 'expense' ? 'var(--bg-secondary)' : 'transparent',
+                    color: txType === 'expense' ? 'var(--expense-color)' : 'var(--text-tertiary)',
+                    border: 'none', cursor: 'pointer'
+                  }}
+                >
+                  지출 (-)
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleTypeChange('income')}
+                  style={{
+                    flex: 1, padding: '6px 2px', fontSize: '11px', fontWeight: '700', borderRadius: '4px',
+                    backgroundColor: txType === 'income' ? 'var(--bg-secondary)' : 'transparent',
+                    color: txType === 'income' ? 'var(--income-color)' : 'var(--text-tertiary)',
+                    border: 'none', cursor: 'pointer'
+                  }}
+                >
+                  수입 (+)
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleTypeChange('wallet_charge')}
+                  style={{
+                    flex: 1, padding: '6px 2px', fontSize: '11px', fontWeight: '700', borderRadius: '4px',
+                    backgroundColor: txType === 'wallet_charge' ? 'var(--bg-secondary)' : 'transparent',
+                    color: txType === 'wallet_charge' ? 'var(--accent-color)' : 'var(--text-tertiary)',
+                    border: 'none', cursor: 'pointer'
+                  }}
+                >
+                  충전
+                </button>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">날짜 *</label>
+                <input 
+                  type="date" 
+                  className="form-input" 
+                  value={date} 
+                  onChange={(e) => setDate(e.target.value)} 
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">항목명 *</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={name} 
+                  onChange={(e) => setName(e.target.value)} 
+                  placeholder="예: 마트 장보기"
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">금액 (원) *</label>
+                <input 
+                  type="text" 
+                  inputMode="numeric"
+                  className="form-input" 
+                  value={amount} 
+                  onChange={handleAmountChange} 
+                  placeholder="숫자 입력"
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">메모</label>
+                <textarea 
+                  className="form-input" 
+                  value={memo} 
+                  onChange={(e) => setMemo(e.target.value)} 
+                  placeholder="추가 설명이나 메모 입력"
+                  style={{ minHeight: '60px', resize: 'vertical' }}
+                />
+              </div>
+
+              {txType === 'expense' && (
+                <>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">카테고리</label>
+                    <select className="form-select" value={category} onChange={(e) => setCategory(e.target.value)}>
+                      <option value="생활비">생활비</option>
+                      <option value="공과금 및 고정지출">공과금 및 고정지출</option>
+                      <option value="공동">공동</option>
+                      <option value="열매 & 번성 & 킹콩">열매 & 번성 & 킹콩</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">결제 수단</label>
+                    <select className="form-select" value={method} onChange={(e) => setMethod(e.target.value)}>
+                      <option value="카드결제">일반 신용카드</option>
+                      <option value="우리카드">우리카드</option>
+                      <option value="현대카드">현대카드</option>
+                      <option value="삼성카드">삼성카드</option>
+                      <option value="계좌이체">계좌이체 / 체크카드</option>
+                      {wallets.map(w => (
+                        <option key={w.id} value={w.name}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {txType === 'wallet_charge' && (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">충전할 지갑</label>
+                  <select className="form-select" value={targetWalletId} onChange={(e) => setTargetWalletId(e.target.value)}>
+                    {wallets.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
+                내역 등록
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 수정 모달창 (Modal) */}
+      {editingItem && (
+        <div className="bottom-sheet-overlay">
+          <div className="bottom-sheet" style={{ width: '420px', borderRadius: 'var(--radius-lg)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '700' }}>
+                내역 오타 수정
+              </h3>
+              <button onClick={() => setEditingItem(null)} style={{ color: 'var(--text-secondary)', cursor: 'pointer', background: 'none', border: 'none' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">날짜 *</label>
+                <input 
+                  type="date" 
+                  className="form-input" 
+                  value={editDate} 
+                  onChange={(e) => setEditDate(e.target.value)} 
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">항목명 *</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={editName} 
+                  onChange={(e) => setEditName(e.target.value)} 
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">금액 *</label>
+                <input 
+                  type="text" 
+                  inputMode="numeric"
+                  className="form-input" 
+                  value={editAmount} 
+                  onChange={handleEditAmountChange} 
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">메모</label>
+                <textarea 
+                  className="form-input" 
+                  value={editMemo} 
+                  onChange={(e) => setEditMemo(e.target.value)} 
+                  placeholder="메모 입력"
+                  style={{ minHeight: '60px', resize: 'vertical' }}
+                />
+              </div>
+
+              {editType === 'expense' && (
+                <>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">카테고리</label>
+                    <select className="form-select" value={editCategory} onChange={(e) => setEditCategory(e.target.value)}>
+                      <option value="생활비">생활비</option>
+                      <option value="공과금 및 고정지출">공과금 및 고정지출</option>
+                      <option value="공동">공동</option>
+                      <option value="열매 & 번성 & 킹콩">열매 & 번성 & 킹콩</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">결제 수단</label>
+                    <select className="form-select" value={editMethod} onChange={(e) => setEditMethod(e.target.value)}>
+                      <option value="카드결제">일반 신용카드</option>
+                      <option value="우리카드">우리카드</option>
+                      <option value="현대카드">현대카드</option>
+                      <option value="삼성카드">삼성카드</option>
+                      <option value="계좌이체">계좌이체 / 체크카드</option>
+                      {wallets.map(w => (
+                        <option key={w.id} value={w.name}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
+                수정 완료
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
