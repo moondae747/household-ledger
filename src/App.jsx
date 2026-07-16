@@ -8,6 +8,7 @@ import TodoManager from './components/TodoManager';
 import Settings from './components/Settings';
 import Login from './components/Login';
 import CardValueManager from './components/CardValueManager';
+import FloatingCalculator from './components/FloatingCalculator';
 import { initFirebase, signOut } from './firebase';
 import { dbService } from './dbService';
 import { 
@@ -553,6 +554,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 플로팅 계산기 */}
+      <FloatingCalculator />
 
     </div>
   );
