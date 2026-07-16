@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dbService } from '../dbService';
-import { Plus, Trash2, Edit2, Maximize2, Minimize2, X, ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { Plus, Trash2, Edit2, Maximize2, Minimize2, X, ChevronLeft, ChevronRight, Search, FileText } from 'lucide-react';
 
 export default function TransactionList({ currentMonth, setCurrentMonth, currentUser, startDay }) {
   const [incomes, setIncomes] = useState([]);
