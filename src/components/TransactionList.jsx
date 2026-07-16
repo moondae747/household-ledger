@@ -21,6 +21,12 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
   const [installmentMonths, setInstallmentMonths] = useState(1);
   const [searchKeyword, setSearchKeyword] = useState('');
 
+  // 💬 결제 알림 문자/톡 파서 상태 변수
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsText, setSmsText] = useState('');
+  const [parsedSms, setParsedSms] = useState({ cardName: '우리카드', date: '', amount: '', name: '', category: '생활비' });
+  const [isDuplicate, setIsDuplicate] = useState(false);
+
   // 1열 확대 토글 ('fixed', 'living', 'joint', 'kids', null)
   const [expandedCategory, setExpandedCategory] = useState(null);
 
@@ -271,6 +277,158 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
       loadData();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // --- 💬 한국어 신용카드 결제 알림 문자 파서 (Gemma 기반 로직 정교화) ---
+  const parseCardSMS = (text) => {
+    if (!text) return null;
+    
+    // 1. 카드사 식별
+    let cardName = '우리카드';
+    if (text.includes('현대')) cardName = '현대카드';
+    else if (text.includes('삼성')) cardName = '삼성카드';
+    else if (text.includes('우리')) cardName = '우리카드';
+    else if (text.includes('국민') || text.includes('KB')) cardName = 'KB국민카드';
+    else if (text.includes('신한')) cardName = '신한카드';
+    else if (text.includes('하나')) cardName = '하나카드';
+    
+    // 2. 결제 금액 추출
+    let amount = '';
+    const amtMatch = text.match(/([0-9,]+)\s*원/);
+    if (amtMatch) {
+      amount = amtMatch[1].replace(/,/g, '');
+    } else {
+      const commaMatch = text.match(/\b([1-9][0-9,]{2,})\b/);
+      if (commaMatch) {
+        amount = commaMatch[1].replace(/,/g, '');
+      }
+    }
+
+    // 3. 결제 날짜 추출 (MM/DD 또는 MM-DD 등)
+    let dateStr = '';
+    const dateMatch = text.match(/\b(0?[1-9]|1[0-2])[\/\-\.](0?[1-9]|[12][0-9]|3[01])\b/);
+    if (dateMatch) {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = dateMatch[1].padStart(2, '0');
+      const day = dateMatch[2].padStart(2, '0');
+      dateStr = `${year}-${month}-${day}`;
+    } else {
+      const today = new Date();
+      dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+
+    // 4. 가맹점명(상점명) 추출 및 휴리스틱 정제
+    let name = '';
+    const timeMatch = text.match(/([0-9]{2}:[0-9]{2})/);
+    if (timeMatch) {
+      const idx = text.indexOf(timeMatch[0]);
+      if (idx !== -1) {
+        const afterTime = text.substring(idx + timeMatch[0].length).trim();
+        let line = afterTime.split('\n')[0].trim();
+        line = line.replace(/일시불/g, '').replace(/할부/g, '').replace(/[0-9,]+원?/g, '').trim();
+        if (line && line.length >= 2) name = line;
+      }
+    }
+
+    if (!name && dateMatch) {
+      const idx = text.indexOf(dateMatch[0]);
+      if (idx !== -1) {
+        const afterDate = text.substring(idx + dateMatch[0].length).trim();
+        let line = afterDate.split('\n')[0].trim();
+        line = line.replace(/^[0-9]{2}:[0-9]{2}/, '').trim();
+        line = line.replace(/일시불/g, '').replace(/할부/g, '').replace(/[0-9,]+원?/g, '').trim();
+        if (line && line.length >= 2) name = line;
+      }
+    }
+
+    const merchantMatch = text.match(/(?:가맹점|사용처|결제처|상호명|이용처)\s*:?\s*([^\s\n]+)/);
+    if (merchantMatch) {
+      name = merchantMatch[1].trim();
+    }
+
+    if (name) {
+      name = name.replace(/\(일시불\)/g, '').replace(/\(할부\)/g, '').replace(/[\(\)]/g, '').trim();
+    }
+
+    return { cardName, date: dateStr, amount, name: name || '카드 결제' };
+  };
+
+  const handleSmsChange = (text) => {
+    setSmsText(text);
+    const parsed = parseCardSMS(text);
+    if (parsed) {
+      setParsedSms(prev => {
+        const next = {
+          ...prev,
+          cardName: parsed.cardName,
+          date: parsed.date,
+          amount: parsed.amount ? Number(parsed.amount).toLocaleString('ko-KR') : '',
+          name: parsed.name
+        };
+        // 금액 포맷팅을 푼 실제 숫자로 중복검사 수행
+        checkDuplicate(parsed.date, parseInt(parsed.amount, 10));
+        return next;
+      });
+    }
+  };
+
+  const checkDuplicate = (targetDate, targetAmount) => {
+    if (!targetDate || !targetAmount || isNaN(targetAmount)) {
+      setIsDuplicate(false);
+      return;
+    }
+    const hasDup = transactions.some(t => 
+      t.date === targetDate && 
+      t.amount === targetAmount && 
+      t.type !== 'wallet_charge'
+    );
+    setIsDuplicate(hasDup);
+  };
+
+  const handleSmsSubmit = async (e) => {
+    e.preventDefault();
+    const cleanAmt = parseInt(parsedSms.amount.replace(/,/g, ''), 10);
+    if (!parsedSms.name || isNaN(cleanAmt) || cleanAmt <= 0 || !parsedSms.date) {
+      alert('파싱된 내역의 날짜, 가맹점, 금액을 확인해 주세요.');
+      return;
+    }
+
+    if (isDuplicate) {
+      if (!confirm('⚠️ 동일한 날짜와 금액의 지출 내역이 이미 가계부에 존재합니다. 정말로 중복 등록하시겠습니까?')) {
+        return;
+      }
+    }
+
+    try {
+      const newTx = {
+        name: parsedSms.name,
+        amount: cleanAmt,
+        date: parsedSms.date,
+        memo: '문자 붙여넣기 자동 등록',
+        category: parsedSms.category,
+        method: parsedSms.cardName,
+        type: 'expense',
+        walletId: null
+      };
+
+      await dbService.addTransaction(newTx);
+      
+      // 상품권이나 페이일 경우 차감 연동
+      if (parsedSms.cardName.includes('상품권') || parsedSms.cardName.includes('페이')) {
+        const matchedWallet = wallets.find(w => parsedSms.cardName.includes(w.name.substring(0, 4)) || w.name.includes(parsedSms.cardName));
+        if (matchedWallet) {
+          await dbService.updateWalletBalance(matchedWallet.id, Math.max(0, matchedWallet.balance - cleanAmt));
+        }
+      }
+
+      alert('성공적으로 가계부 내역에 등록되었습니다.');
+      setShowSmsModal(false);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert('지출 등록에 실패했습니다.');
     }
   };
 
@@ -620,25 +778,45 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
         </div>
       </div>
 
-      {/* 🔍 검색바 */}
-      <div style={{ position: 'relative', maxWidth: '400px' }}>
-        <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
-        <input
-          type="text"
-          className="form-input"
-          value={searchKeyword}
-          onChange={(e) => setSearchKeyword(e.target.value)}
-          placeholder="항목명, 금액, 결제수단, 메모로 검색..."
-          style={{ paddingLeft: '34px', paddingRight: searchKeyword ? '32px' : '12px', height: '36px', fontSize: '13px', marginBottom: 0 }}
-        />
-        {searchKeyword && (
-          <button
-            onClick={() => setSearchKeyword('')}
-            style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px' }}
-          >
-            <X size={14} />
-          </button>
-        )}
+      {/* 🔍 검색바 및 결제문자 파서 연동 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ position: 'relative', width: '320px' }}>
+          <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+          <input
+            type="text"
+            className="form-input"
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            placeholder="항목명, 금액, 결제수단, 메모로 검색..."
+            style={{ paddingLeft: '34px', paddingRight: searchKeyword ? '32px' : '12px', height: '36px', fontSize: '13px', marginBottom: 0 }}
+          />
+          {searchKeyword && (
+            <button
+              onClick={() => setSearchKeyword('')}
+              style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px' }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={() => {
+            setSmsText('');
+            // 오늘 날짜로 기본 세팅
+            const today = new Date();
+            const y = today.getFullYear();
+            const m = String(today.getMonth() + 1).padStart(2, '0');
+            const d = String(today.getDate()).padStart(2, '0');
+            setParsedSms({ cardName: '우리카드', date: `${y}-${m}-${d}`, amount: '', name: '', category: '생활비' });
+            setIsDuplicate(false);
+            setShowSmsModal(true);
+          }}
+          className="btn btn-primary"
+          style={{ height: '36px', padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '800' }}
+        >
+          <FileText size={15} /> 결제 문자/알림톡 붙여넣기 등록
+        </button>
       </div>
 
       {/* 테이블이 와이드하게 넓게 배치되도록 sidebar 구조를 걷어냄 */}
@@ -919,6 +1097,126 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 💬 결제 문자 붙여넣기 파싱 모달 팝업 */}
+      {showSmsModal && (
+        <div className="bottom-sheet-overlay">
+          <div className="bottom-sheet" style={{ width: '680px', maxWidth: '95vw', borderRadius: 'var(--radius-lg)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FileText size={18} style={{ color: 'var(--accent-color)' }} /> 카드 결제 문자/알림톡 복사 등록
+              </h3>
+              <button onClick={() => setShowSmsModal(false)} style={{ color: 'var(--text-secondary)', cursor: 'pointer', background: 'none', border: 'none' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              {/* 왼쪽: 붙여넣기 영역 */}
+              <div style={{ flex: 1, minWidth: '280px' }}>
+                <label className="form-label" style={{ fontWeight: '800' }}>결제 문자/톡 내용 붙여넣기</label>
+                <textarea
+                  className="form-input"
+                  value={smsText}
+                  onChange={(e) => handleSmsChange(e.target.value)}
+                  placeholder="[Web발신]&#10;우리카드 승인&#10;07/16 13:20 15,000원&#10;네이버페이&#10;&#10;여기에 복사한 내용을 붙여넣으세요."
+                  style={{ minHeight: '260px', width: '100%', resize: 'none', fontSize: '13px', lineHeight: '1.5' }}
+                />
+              </div>
+
+              {/* 오른쪽: 분석결과 확인 및 수동 보정 */}
+              <form onSubmit={handleSmsSubmit} style={{ flex: 1.1, minWidth: '300px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <label className="form-label" style={{ fontWeight: '800', color: 'var(--text-secondary)' }}>실시간 파싱 결과 (보정 가능)</label>
+                
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">결제일 *</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={parsedSms.date}
+                    onChange={(e) => {
+                      setParsedSms(prev => ({ ...prev, date: e.target.value }));
+                      checkDuplicate(e.target.value, parseInt(parsedSms.amount.replace(/,/g, ''), 10));
+                    }}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">가맹점명(상점) *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={parsedSms.name}
+                    onChange={(e) => setParsedSms(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="상점명 입력"
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">결제 금액(원) *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={parsedSms.amount}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '');
+                      const formatted = raw ? Number(raw).toLocaleString('ko-KR') : '';
+                      setParsedSms(prev => ({ ...prev, amount: formatted }));
+                      checkDuplicate(parsedSms.date, parseInt(raw, 10));
+                    }}
+                    placeholder="숫자 입력"
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">결제 수단</label>
+                  <select
+                    className="form-select"
+                    value={parsedSms.cardName}
+                    onChange={(e) => setParsedSms(prev => ({ ...prev, cardName: e.target.value }))}
+                  >
+                    <option value="우리카드">우리카드</option>
+                    <option value="현대카드">현대카드</option>
+                    <option value="삼성카드">삼성카드</option>
+                    <option value="계좌이체">계좌이체 / 체크카드</option>
+                    {wallets.filter(w => w.name !== '광진사랑상품권').map(w => (
+                      <option key={w.id} value={w.name}>{w.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">카테고리 지정</label>
+                  <select
+                    className="form-select"
+                    value={parsedSms.category}
+                    onChange={(e) => setParsedSms(prev => ({ ...prev, category: e.target.value }))}
+                  >
+                    <option value="생활비">생활비</option>
+                    <option value="공과금 및 고정지출">공과금 및 고정지출</option>
+                    <option value="공동">공동</option>
+                    <option value="열매 & 번성 & 킹콩">열매 & 번성 & 킹콩</option>
+                  </select>
+                </div>
+
+                {/* ⚠️ 중복 경고창 */}
+                {isDuplicate && (
+                  <div style={{ padding: '8px 12px', backgroundColor: 'var(--expense-light)', border: '1px solid var(--expense-color)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--expense-color)', fontWeight: '800' }}>
+                    ⚠️ 가계부에 동일한 날짜와 금액의 지출이 이미 등록되어 있습니다. (중복 주의)
+                  </div>
+                )}
+
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px', padding: '10px', fontWeight: '800' }}>
+                  등록 완료
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
