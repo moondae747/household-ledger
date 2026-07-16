@@ -13,6 +13,7 @@ export default function FloatingCalculator() {
   const dragStartPos = useRef({ x: 0, y: 0 });
   const buttonStartPos = useRef({ x: 0, y: 0 });
   const hasMovedRef = useRef(false);
+  const popupRef = useRef(null);
 
   // 로컬스토리지에서 계산 기록 로드
   useEffect(() => {
@@ -42,15 +43,108 @@ export default function FloatingCalculator() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // 계산기 활성화 시 첫 버튼 자동 포커싱으로 키보드 모드 진입 유도
+  useEffect(() => {
+    if (isOpen && popupRef.current) {
+      const firstBtn = popupRef.current.querySelector('.calc-btn');
+      if (firstBtn) firstBtn.focus();
+    }
+  }, [isOpen]);
+
   // 계산 기록 로컬스토리지 저장
   const saveHistory = (newHistory) => {
     setHistory(newHistory);
     localStorage.setItem('calculator_history', JSON.stringify(newHistory));
   };
 
+  // --- 키보드 입력 감지 및 전역/다른 요소 동작 차단 ---
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e) => {
+      // 포커스가 외부 일반 input/textarea에 있다면 키보드 계산기 차단 (검색창, 내역 수정창 등 배려)
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+        if (!popupRef.current || !popupRef.current.contains(activeEl)) {
+          return;
+        }
+      }
+
+      const key = e.key;
+
+      // 숫자
+      if (/^[0-9]$/.test(key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleNum(Number(key));
+      }
+      // 연산자
+      else if (['+', '-', '*', '/'].includes(key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleOperator(key);
+      }
+      else if (key === 'x' || key === 'X') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleOperator('*');
+      }
+      // 소수점
+      else if (key === '.') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleDot();
+      }
+      // 계산 실행 (Enter, =)
+      else if (key === 'Enter' || key === '=') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleEqual();
+      }
+      // 백스페이스
+      else if (key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleBackspace();
+      }
+      // 초기화 및 ESC 닫기
+      else if (key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsOpen(false);
+      }
+      else if (key === 'c' || key === 'C' || key === 'Delete') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClear();
+      }
+      // 계산기 내부 탭 포커스 트랩 (키보드 탭 이동 시 외부 이탈 방지)
+      else if (key === 'Tab' && popupRef.current) {
+        const focusableEls = popupRef.current.querySelectorAll('button, input, [tabindex="0"]');
+        if (focusableEls.length > 0) {
+          const firstEl = focusableEls[0];
+          const lastEl = focusableEls[focusableEls.length - 1];
+          if (e.shiftKey) { // Shift + Tab
+            if (document.activeElement === firstEl) {
+              lastEl.focus();
+              e.preventDefault();
+            }
+          } else { // Tab
+            if (document.activeElement === lastEl) {
+              firstEl.focus();
+              e.preventDefault();
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true); // 캡처링 단계에서 포착하여 타 요소 단축키 차단
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, formula, display, history]);
+
   // --- 드래그앤드롭 이벤트 핸들러 ---
   const handleMouseDown = (e) => {
-    // 마우스 우클릭이나 휠클릭 무시
     if (e.button !== 0) return;
     setIsDragging(true);
     hasMovedRef.current = false;
@@ -64,7 +158,6 @@ export default function FloatingCalculator() {
     const dx = e.clientX - dragStartPos.current.x;
     const dy = e.clientY - dragStartPos.current.y;
     
-    // 미세한 움직임은 드래그로 보지 않음 (클릭 보정)
     if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
       hasMovedRef.current = true;
     }
@@ -82,7 +175,6 @@ export default function FloatingCalculator() {
     setIsDragging(false);
   };
 
-  // 모바일 터치 대응
   const handleTouchStart = (e) => {
     if (e.touches.length !== 1) return;
     setIsDragging(true);
@@ -109,7 +201,6 @@ export default function FloatingCalculator() {
     });
   };
 
-  // 전역 마우스무브/마우스업 리스너 등록 (드래그 시 윈도우 전체에서 부드럽게 움직이도록 함)
   useEffect(() => {
     if (isDragging) {
       window.addEventListener('mousemove', handleMouseMove);
@@ -126,7 +217,6 @@ export default function FloatingCalculator() {
   }, [isDragging]);
 
   const handleButtonClick = () => {
-    // 드래그한 경우에는 팝업이 열리지 않도록 제어
     if (!hasMovedRef.current) {
       setIsOpen(!isOpen);
     }
@@ -143,7 +233,6 @@ export default function FloatingCalculator() {
   const handleOperator = (op) => {
     if (display === 'Error') return;
     setFormula(prev => {
-      // 이미 연산자가 마지막에 있다면 교체
       const lastChar = prev.trim().slice(-1);
       if (['+', '-', '*', '/'].includes(lastChar) && display === '0') {
         return prev.trim().slice(0, -1) + ' ' + op + ' ';
@@ -178,13 +267,11 @@ export default function FloatingCalculator() {
     });
   };
 
-  // 계산 수행
   const handleEqual = () => {
     if (display === 'Error') return;
     const fullExpression = formula + display;
     if (!fullExpression.trim()) return;
 
-    // 안전한 수식 계산
     let cleaned = fullExpression.replace(/×/g, '*').replace(/÷/g, '/').replace(/,/g, '');
     if (/^[0-9+\-*/().\s]+$/.test(cleaned)) {
       try {
@@ -194,13 +281,12 @@ export default function FloatingCalculator() {
           setDisplay(finalResult);
           setFormula('');
 
-          // 기록 추가
           const record = {
             id: Date.now().toString(),
             expr: fullExpression,
             result: finalResult
           };
-          saveHistory([record, ...history].slice(0, 50)); // 최대 50개 유지
+          saveHistory([record, ...history].slice(0, 50));
         } else {
           setDisplay('Error');
         }
@@ -212,25 +298,23 @@ export default function FloatingCalculator() {
     }
   };
 
-  // 기록 아이템 선택 시 현재 화면에 입력
   const handleSelectHistory = (result) => {
     setDisplay(result);
   };
 
-  // 기록 전체 삭제
   const handleClearHistory = () => {
     if (confirm('계산 기록을 모두 삭제하시겠습니까?')) {
       saveHistory([]);
     }
   };
 
-  // 1000단위 콤마 포맷팅 헬퍼
   const formatComma = (val) => {
     if (val === 'Error') return val;
     const [integer, decimal] = val.split('.');
     const formattedInteger = Number(integer).toLocaleString('ko-KR');
     return decimal !== undefined ? `${formattedInteger}.${decimal}` : formattedInteger;
   };
+
 
   return (
     <div style={{ zIndex: 9999, position: 'relative' }}>
@@ -266,6 +350,8 @@ export default function FloatingCalculator() {
       {/* 계산기 팝업 창 */}
       {isOpen && (
         <div
+          ref={popupRef}
+          tabIndex={-1}
           style={{
             position: 'fixed',
             left: `${Math.min(position.x - 340, window.innerWidth - 640)}px`,
@@ -278,7 +364,8 @@ export default function FloatingCalculator() {
             overflow: 'hidden',
             width: '600px',
             maxWidth: '90vw',
-            animation: 'scaleUp 0.15s ease-out'
+            animation: 'scaleUp 0.15s ease-out',
+            outline: 'none'
           }}
           className="calc-popup-container"
         >
