@@ -35,6 +35,16 @@
 
   --transition-fast: 0.15s ease;
   --transition-normal: 0.25s ease;
+
+  /* 카테고리 구분 색상 */
+  --cat-fixed-color: #4A90D9;
+  --cat-fixed-light: rgba(74, 144, 217, 0.08);
+  --cat-living-color: #34A853;
+  --cat-living-light: rgba(52, 168, 83, 0.08);
+  --cat-joint-color: #FF8C00;
+  --cat-joint-light: rgba(255, 140, 0, 0.08);
+  --cat-kids-color: #E91E8C;
+  --cat-kids-light: rgba(233, 30, 140, 0.08);
 }
 
 [data-theme='dark'] {
@@ -785,10 +795,10 @@ body {
   }
 }
 
-/* 🔄 카드값 정산판 및 와이드 테이블 텍스트 래핑 보완 */
-.excel-table.expanded td {
-  white-space: normal;
-  word-break: break-all;
+/* 🔄 와이드 테이블 텍스트 1줄 유지 강제 (줄바꿈 절대 금지) */
+.excel-table td,
+.excel-table th {
+  white-space: nowrap !important;
 }
 
 @keyframes spin {

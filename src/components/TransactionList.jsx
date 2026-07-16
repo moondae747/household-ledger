@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dbService } from '../dbService';
-import { Plus, Trash2, Edit2, Maximize2, Minimize2, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Edit2, Maximize2, Minimize2, X, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 export default function TransactionList({ currentMonth, setCurrentMonth, currentUser, startDay }) {
   const [incomes, setIncomes] = useState([]);
@@ -18,6 +18,8 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
   const [category, setCategory] = useState('생활비');
   const [method, setMethod] = useState('카드결제');
   const [targetWalletId, setTargetWalletId] = useState('');
+  const [installmentMonths, setInstallmentMonths] = useState(1);
+  const [searchKeyword, setSearchKeyword] = useState('');
 
   // 1열 확대 토글 ('fixed', 'living', 'joint', 'kids', null)
   const [expandedCategory, setExpandedCategory] = useState(null);
@@ -101,7 +103,7 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
       setMethod('계좌이체');
     } else {
       setCategory('생활비');
-      setMethod('카드결제');
+      setMethod('우리카드');
     }
   };
 
@@ -143,8 +145,13 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
           type: txType,
           walletId: txType === 'wallet_charge' ? targetWalletId : null
         };
-        
-        await dbService.addTransaction(newTx);
+
+        // 할부 등록 처리
+        if (txType === 'expense' && installmentMonths >= 2) {
+          await dbService.addInstallmentTransactions(newTx, installmentMonths);
+        } else {
+          await dbService.addTransaction(newTx);
+        }
 
         // 페이 및 지갑 결제수단일 경우 실시간 지갑 차감/충전 반영
         if (txType === 'wallet_charge' && targetWalletId) {
@@ -163,6 +170,7 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
       setName('');
       setAmount('');
       setMemo('');
+      setInstallmentMonths(1);
       setShowAddModal(false);
       loadData();
     } catch (err) {
@@ -270,6 +278,19 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
     return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW' }).format(num);
   };
 
+  // 검색 필터 적용 함수
+  const matchesSearch = (item) => {
+    if (!searchKeyword.trim()) return true;
+    const kw = searchKeyword.toLowerCase();
+    return (
+      (item.name && item.name.toLowerCase().includes(kw)) ||
+      (item.method && item.method.toLowerCase().includes(kw)) ||
+      (item.memo && item.memo.toLowerCase().includes(kw)) ||
+      (item.date && item.date.includes(kw)) ||
+      (item.amount && item.amount.toString().includes(kw))
+    );
+  };
+
   const getCategorizedData = (catName) => {
     const list = transactions
       .filter(t => {
@@ -278,6 +299,7 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
         }
         return t.category === catName && t.type !== 'wallet_charge';
       })
+      .filter(matchesSearch)
       .sort((a, b) => a.date.localeCompare(b.date));
     
     let runningTotal = 0;
@@ -296,12 +318,13 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
     } else if (type === 'wallet_charge') {
       setMethod('계좌이체');
     } else {
-      setMethod('카드결제');
+      setMethod('우리카드');
     }
     
     setName('');
     setAmount('');
     setMemo('');
+    setInstallmentMonths(1);
     
     const today = new Date();
     const y = today.getFullYear();
@@ -312,10 +335,19 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
     setShowAddModal(true);
   };
 
+  // 카테고리별 색상 매핑
+  const catColors = {
+    fixed: { color: 'var(--cat-fixed-color)', light: 'var(--cat-fixed-light)' },
+    living: { color: 'var(--cat-living-color)', light: 'var(--cat-living-light)' },
+    joint: { color: 'var(--cat-joint-color)', light: 'var(--cat-joint-light)' },
+    kids: { color: 'var(--cat-kids-color)', light: 'var(--cat-kids-light)' },
+  };
+
   const fixedExpensesData = getCategorizedData('공과금 및 고정지출');
   const livingExpensesData = getCategorizedData('생활비');
   const jointExpensesData = getCategorizedData('공동');
   const kidsExpensesData = getCategorizedData('열매 & 번성 & 킹콩');
+  const filteredIncomes = incomes.filter(matchesSearch);
 
   const totalIncome = incomes.reduce((sum, inc) => sum + inc.amount, 0);
 
@@ -326,11 +358,12 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
 
   const renderTable = (title, dataList, catKey) => {
     const isExpanded = expandedCategory === catKey;
+    const cc = catColors[catKey] || catColors.living;
 
     return (
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-          <span style={{ fontSize: '13.5px', fontWeight: '800', color: 'var(--text-primary)' }}>{title} ({dataList.length}건)</span>
+      <div className="card" style={{ padding: 0, overflow: 'hidden', borderLeft: `4px solid ${cc.color}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', backgroundColor: cc.light, borderBottom: '1px solid var(--border-color)' }}>
+          <span style={{ fontSize: '13.5px', fontWeight: '800', color: cc.color }}>{title} ({dataList.length}건)</span>
           
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button 
@@ -365,15 +398,15 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
         </div>
 
         <div className="table-responsive" style={{ overflowX: 'auto', height: isExpanded ? '480px' : '290px', overflowY: 'auto' }}>
-          <table className="excel-table expanded" style={{ width: '100%', minWidth: '800px' }}>
+          <table className="excel-table expanded" style={{ width: '100%', minWidth: '640px' }}>
             <thead>
               <tr>
-                <th style={{ width: '100px', textAlign: 'center' }}>날짜</th>
-                <th style={{ minWidth: '180px' }}>항목명</th>
-                <th style={{ width: '120px' }}>결제수단</th>
-                <th style={{ width: '120px', textAlign: 'right' }}>금액</th>
-                <th style={{ width: '120px', textAlign: 'right' }}>누계</th>
-                <th style={{ width: '60px', textAlign: 'center' }}>동작</th>
+                <th style={{ width: '105px', textAlign: 'center' }}>날짜</th>
+                <th style={{ minWidth: '140px' }}>항목명</th>
+                <th style={{ width: '105px' }}>결제수단</th>
+                <th style={{ width: '115px', textAlign: 'right' }}>금액</th>
+                <th style={{ width: '115px', textAlign: 'right' }}>누계</th>
+                <th style={{ width: '55px', textAlign: 'center' }}>동작</th>
               </tr>
             </thead>
             <tbody>
@@ -471,12 +504,13 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
 
   const renderIncomeTable = () => {
     if (expandedCategory) return null;
+    const incomeList = filteredIncomes;
 
     return (
       <div className="card" style={{ overflow: 'hidden', padding: '16px 20px' }}>
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '6px', borderBottom: '1px solid var(--border-color)' }}>
           <span style={{ fontWeight: '800', fontSize: '14.5px', color: 'var(--income-color)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            💰 이번 달 수입 세부 명세서 ({incomes.length}건)
+            💰 이번 달 수입 세부 명세서 ({incomeList.length}건)
           </span>
           
           <button 
@@ -502,22 +536,22 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
           </button>
         </div>
         <div style={{ overflowX: 'auto', height: '290px', overflowY: 'auto' }} className="table-responsive">
-          <table className="excel-table expanded" style={{ width: '100%', minWidth: '800px' }}>
+          <table className="excel-table expanded" style={{ width: '100%', minWidth: '520px' }}>
             <thead>
               <tr>
-                <th style={{ width: '100px', textAlign: 'center' }}>날짜</th>
-                <th style={{ minWidth: '220px' }}>수입 항목명</th>
+                <th style={{ width: '105px', textAlign: 'center' }}>날짜</th>
+                <th style={{ minWidth: '190px' }}>수입 항목명</th>
                 <th style={{ width: '130px', textAlign: 'right' }}>금액</th>
-                <th style={{ width: '60px', textAlign: 'center' }}>동작</th>
+                <th style={{ width: '55px', textAlign: 'center' }}>동작</th>
               </tr>
             </thead>
             <tbody>
-              {incomes.length === 0 ? (
+              {incomeList.length === 0 ? (
                 <tr>
                   <td colSpan={4} style={{ textAlign: 'center', height: '220px', verticalAlign: 'middle', color: 'var(--text-tertiary)' }}>등록된 수입 내역이 없습니다.</td>
                 </tr>
               ) : (
-                incomes.map(item => (
+                incomeList.map(item => (
                   <tr key={item.id} className="list-item-hover" onClick={() => handleOpenEdit(item, 'income')} style={{ cursor: 'pointer' }}>
                     <td style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>{item.date}</td>
                     <td 
@@ -584,6 +618,27 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
             </span>
           </div>
         </div>
+      </div>
+
+      {/* 🔍 검색바 */}
+      <div style={{ position: 'relative', maxWidth: '400px' }}>
+        <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+        <input
+          type="text"
+          className="form-input"
+          value={searchKeyword}
+          onChange={(e) => setSearchKeyword(e.target.value)}
+          placeholder="항목명, 금액, 결제수단, 메모로 검색..."
+          style={{ paddingLeft: '34px', paddingRight: searchKeyword ? '32px' : '12px', height: '36px', fontSize: '13px', marginBottom: 0 }}
+        />
+        {searchKeyword && (
+          <button
+            onClick={() => setSearchKeyword('')}
+            style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '2px' }}
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {/* 테이블이 와이드하게 넓게 배치되도록 sidebar 구조를 걷어냄 */}
@@ -707,15 +762,37 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">결제 수단</label>
                     <select className="form-select" value={method} onChange={(e) => setMethod(e.target.value)}>
-                      <option value="카드결제">일반 신용카드</option>
                       <option value="우리카드">우리카드</option>
                       <option value="현대카드">현대카드</option>
                       <option value="삼성카드">삼성카드</option>
                       <option value="계좌이체">계좌이체 / 체크카드</option>
-                      {wallets.map(w => (
+                      {wallets.filter(w => w.name !== '광진사랑상품권').map(w => (
                         <option key={w.id} value={w.name}>{w.name}</option>
                       ))}
                     </select>
+                  </div>
+                  {/* 할부 개월 입력 */}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">할부 개월 수</label>
+                    <select className="form-select" value={installmentMonths} onChange={(e) => setInstallmentMonths(Number(e.target.value))}>
+                      <option value={1}>일시불</option>
+                      <option value={2}>2개월</option>
+                      <option value={3}>3개월</option>
+                      <option value={4}>4개월</option>
+                      <option value={5}>5개월</option>
+                      <option value={6}>6개월</option>
+                      <option value={7}>7개월</option>
+                      <option value={8}>8개월</option>
+                      <option value={9}>9개월</option>
+                      <option value={10}>10개월</option>
+                      <option value={11}>11개월</option>
+                      <option value={12}>12개월</option>
+                    </select>
+                    {installmentMonths >= 2 && (
+                      <p style={{ fontSize: '10px', color: 'var(--accent-color)', marginTop: '4px' }}>
+                        → {installmentMonths}회 분할: 회당 약 {Math.round(parseInt((amount || '0').replace(/,/g, ''), 10) / installmentMonths).toLocaleString()}원
+                      </p>
+                    )}
                   </div>
                 </>
               )}
@@ -724,7 +801,7 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">충전할 지갑</label>
                   <select className="form-select" value={targetWalletId} onChange={(e) => setTargetWalletId(e.target.value)}>
-                    {wallets.map(w => (
+                    {wallets.filter(w => w.name !== '광진사랑상품권').map(w => (
                       <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
@@ -814,12 +891,11 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">결제 수단</label>
                     <select className="form-select" value={editMethod} onChange={(e) => setEditMethod(e.target.value)}>
-                      <option value="카드결제">일반 신용카드</option>
                       <option value="우리카드">우리카드</option>
                       <option value="현대카드">현대카드</option>
                       <option value="삼성카드">삼성카드</option>
                       <option value="계좌이체">계좌이체 / 체크카드</option>
-                      {wallets.map(w => (
+                      {wallets.filter(w => w.name !== '광진사랑상품권').map(w => (
                         <option key={w.id} value={w.name}>{w.name}</option>
                       ))}
                     </select>
@@ -827,9 +903,21 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
                 </>
               )}
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
-                수정 완료
-              </button>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                  수정 완료
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDelete(editingItem, editingItem.type || 'expense');
+                    setEditingItem(null);
+                  }}
+                  style={{ flex: 'none', padding: '8px 16px', backgroundColor: 'var(--expense-color)', color: '#fff', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: '700', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  <Trash2 size={13} /> 삭제
+                </button>
+              </div>
             </form>
           </div>
         </div>

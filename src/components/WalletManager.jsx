@@ -68,12 +68,12 @@ export default function WalletManager() {
       <h2>지갑 관리</h2>
       
       <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-        서울사랑상품권, 광진사랑상품권, 땡겨요 페이 등의 상품권/페이 선충전 금액 잔고를 개별 관리합니다. 
+        서울사랑상품권, 땡겨요 페이 등의 상품권/페이 선충전 금액 잔고를 개별 관리합니다. 
         가계부 지출 작성 시 결제 수단을 해당 상품권/페이로 선택하면, 이 지갑 잔액에서 결제금액이 자동으로 차감됩니다.
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-        {wallets.map(w => {
+        {wallets.filter(w => w.name !== '광진사랑상품권').map(w => {
           const isEditing = editingWalletId === w.id;
           return (
             <div key={w.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '20px' }}>

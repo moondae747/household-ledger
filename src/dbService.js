@@ -41,7 +41,6 @@ const initMockData = () => {
   if (!localStorage.getItem('ledger_wallets')) {
     mockDb.set('ledger_wallets', [
       { id: 'w_seoul', name: '서울사랑상품권', balance: 0 },
-      { id: 'w_gwangjin', name: '광진사랑상품권', balance: 0 },
       { id: 'w_ddangyo', name: '땡겨요 페이', balance: 0 },
       { id: 'w_biple', name: '비플페이', balance: 0 }
     ]);
@@ -418,6 +417,37 @@ export const dbService = {
     return true;
   },
 
+  // 할부 거래 일괄 등록
+  async addInstallmentTransactions(txData, months) {
+    const results = [];
+    const baseAmount = Math.round(txData.amount / months);
+    const [baseY, baseM, baseD] = txData.date.split('-').map(Number);
+    
+    for (let i = 0; i < months; i++) {
+      const installDate = new Date(baseY, baseM - 1 + i, baseD);
+      // 말일 보정: 원래 날짜의 일(day)이 해당 월의 말일보다 크면 말일로 보정
+      if (installDate.getDate() !== baseD) {
+        installDate.setDate(0); // 전월 말일로 보정
+      }
+      const dateStr = `${installDate.getFullYear()}-${String(installDate.getMonth() + 1).padStart(2, '0')}-${String(installDate.getDate()).padStart(2, '0')}`;
+      
+      // 마지막 회차는 나머지 금액을 보정하여 총합이 정확히 맞도록 처리
+      const installAmount = (i === months - 1) ? txData.amount - baseAmount * (months - 1) : baseAmount;
+      
+      const installTx = {
+        ...txData,
+        name: `${txData.name} (${i + 1}/${months})`,
+        amount: installAmount,
+        date: dateStr,
+        memo: txData.memo ? `${txData.memo} [할부 ${i + 1}/${months}]` : `[할부 ${i + 1}/${months}]`
+      };
+      
+      const result = await this.addTransaction(installTx);
+      results.push(result);
+    }
+    return results;
+  },
+
   // --- 3. 고정 지출 (Fixed Expenses Master) ---
   fetchFixedExpenses: async () => {
     const ids = getQueryGroupIds();
@@ -528,7 +558,7 @@ export const dbService = {
         const snapshot = await withTimeout(getDocs(q), 2000);
         let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
-        const defaultNames = ['서울사랑상품권', '광진사랑상품권', '땡겨요 페이', '비플페이'];
+        const defaultNames = ['서울사랑상품권', '땡겨요 페이', '비플페이'];
 
         if (data.length === 0) {
           const defaultWallets = defaultNames.map(name => ({
@@ -565,7 +595,7 @@ export const dbService = {
     
     // Fallback
     const localWallets = mockDb.get('ledger_wallets');
-    const defaultNames = ['서울사랑상품권', '광진사랑상품권', '땡겨요 페이', '비플페이'];
+    const defaultNames = ['서울사랑상품권', '땡겨요 페이', '비플페이'];
     
     let hasModified = false;
     const updatedLocal = [...localWallets];
