@@ -27,6 +27,12 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 
+// 환경 변수 기반 사용자 이메일 매핑 (기본값 제공)
+const USER_1_EMAIL = (import.meta.env.VITE_USER_1_EMAIL || 'dlsrks4410@gmail.com').toLowerCase();
+const USER_1_NAME = import.meta.env.VITE_USER_1_NAME || '영민';
+const USER_2_EMAIL = (import.meta.env.VITE_USER_2_EMAIL || 'sgcaj19@gmail.com').toLowerCase();
+const USER_2_NAME = import.meta.env.VITE_USER_2_NAME || '아정';
+
 export default function App() {
   const [activeNav, setActiveNav] = useState('dashboard');
   const [currentMonth, setCurrentMonth] = useState('');
@@ -116,14 +122,14 @@ export default function App() {
 
             // 로그인 주체 이메일에 따라 영민/아정 및 상대방 이메일 상호 매핑 보정
             const email = user.email ? user.email.toLowerCase() : '';
-            if (email === 'dlsrks4410@gmail.com') {
-              setCurrentUser('영민');
-              localStorage.setItem('current_user', '영민');
-              localStorage.setItem('partner_email', 'sgcaj19@gmail.com');
-            } else if (email === 'sgcaj19@gmail.com') {
-              setCurrentUser('아정');
-              localStorage.setItem('current_user', '아정');
-              localStorage.setItem('partner_email', 'dlsrks4410@gmail.com');
+            if (email === USER_1_EMAIL) {
+              setCurrentUser(USER_1_NAME);
+              localStorage.setItem('current_user', USER_1_NAME);
+              localStorage.setItem('partner_email', USER_2_EMAIL);
+            } else if (email === USER_2_EMAIL) {
+              setCurrentUser(USER_2_NAME);
+              localStorage.setItem('current_user', USER_2_NAME);
+              localStorage.setItem('partner_email', USER_1_EMAIL);
             }
 
             // 구글 세션 연동 성공 직후 로컬 백업할 예전 모의 데이터가 남아있는지 스캔
@@ -189,12 +195,12 @@ export default function App() {
     const email = user.email ? user.email.toLowerCase() : '';
     let mappedUser = currentUser;
     
-    if (email === 'dlsrks4410@gmail.com') {
-      mappedUser = '영민';
-      localStorage.setItem('partner_email', 'sgcaj19@gmail.com');
-    } else if (email === 'sgcaj19@gmail.com') {
-      mappedUser = '아정';
-      localStorage.setItem('partner_email', 'dlsrks4410@gmail.com');
+    if (email === USER_1_EMAIL) {
+      mappedUser = USER_1_NAME;
+      localStorage.setItem('partner_email', USER_2_EMAIL);
+    } else if (email === USER_2_EMAIL) {
+      mappedUser = USER_2_NAME;
+      localStorage.setItem('partner_email', USER_1_EMAIL);
     }
     
     setCurrentUser(mappedUser);
