@@ -426,7 +426,7 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
         name: parsedSms.name,
         amount: cleanAmt,
         date: parsedSms.date,
-        memo: '문자 붙여넣기 자동 등록',
+        memo: '',
         category: parsedSms.category,
         method: parsedSms.cardName,
         type: 'expense',
