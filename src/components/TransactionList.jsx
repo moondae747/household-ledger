@@ -280,7 +280,7 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
     }
   };
 
-  // --- 💬 한국어 신용카드 결제 알림 문자 파서 (Gemma 기반 로직 정교화) ---
+  // --- 💬 한국어 신용카드 결제 알림 문자 파서 (우리카드 및 라인 파싱 강화) ---
   const parseCardSMS = (text) => {
     if (!text) return null;
     
@@ -293,63 +293,83 @@ export default function TransactionList({ currentMonth, setCurrentMonth, current
     else if (text.includes('신한')) cardName = '신한카드';
     else if (text.includes('하나')) cardName = '하나카드';
     
-    // 2. 결제 금액 추출
+    // 2. 결제 금액 추출 ('총누적', '누적' 문구 금액 제외)
     let amount = '';
-    const amtMatch = text.match(/([0-9,]+)\s*원/);
+    const nonCumulativeText = text.replace(/(?:총누적|누적|잔액)\s*:?\s*[0-9,]+원?/g, '');
+    const amtMatch = nonCumulativeText.match(/([0-9,]{3,})\s*원/);
     if (amtMatch) {
       amount = amtMatch[1].replace(/,/g, '');
     } else {
-      const commaMatch = text.match(/\b([1-9][0-9,]{2,})\b/);
+      const commaMatch = nonCumulativeText.match(/\b([1-9][0-9,]{2,})\b/);
       if (commaMatch) {
         amount = commaMatch[1].replace(/,/g, '');
       }
     }
 
-    // 3. 결제 날짜 추출 (MM/DD 또는 MM-DD 등)
+    // 3. 결제 날짜 및 시각(시간) 추출
     let dateStr = '';
-    const dateMatch = text.match(/\b(0?[1-9]|1[0-2])[\/\-\.](0?[1-9]|[12][0-9]|3[01])\b/);
-    if (dateMatch) {
+    let hourNum = null;
+    const dateTimeMatch = text.match(/\b(0?[1-9]|1[0-2])[\/\-\.](0?[1-9]|[12][0-9]|3[01])\s*([0-9]{2}):([0-9]{2})/);
+    if (dateTimeMatch) {
       const today = new Date();
       const year = today.getFullYear();
-      const month = dateMatch[1].padStart(2, '0');
-      const day = dateMatch[2].padStart(2, '0');
+      const month = dateTimeMatch[1].padStart(2, '0');
+      const day = dateTimeMatch[2].padStart(2, '0');
       dateStr = `${year}-${month}-${day}`;
+      hourNum = parseInt(dateTimeMatch[3], 10);
     } else {
-      const today = new Date();
-      dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const dateOnlyMatch = text.match(/\b(0?[1-9]|1[0-2])[\/\-\.](0?[1-9]|[12][0-9]|3[01])\b/);
+      if (dateOnlyMatch) {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = dateOnlyMatch[1].padStart(2, '0');
+        const day = dateOnlyMatch[2].padStart(2, '0');
+        dateStr = `${year}-${month}-${day}`;
+      } else {
+        const today = new Date();
+        dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      }
     }
 
-    // 4. 가맹점명(상점명) 추출 및 휴리스틱 정제
+    // 4. 가맹점명(상점명) 추출
     let name = '';
-    const timeMatch = text.match(/([0-9]{2}:[0-9]{2})/);
-    if (timeMatch) {
-      const idx = text.indexOf(timeMatch[0]);
-      if (idx !== -1) {
-        const afterTime = text.substring(idx + timeMatch[0].length).trim();
-        let line = afterTime.split('\n')[0].trim();
-        line = line.replace(/일시불/g, '').replace(/할부/g, '').replace(/[0-9,]+원?/g, '').trim();
-        if (line && line.length >= 2) name = line;
-      }
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    // 메타데이터 및 지출/누적 관련 라인을 필터링하여 유효 라인 탐색
+    const validLines = lines.filter(line => {
+      if (line.includes('[Web발신]')) return false;
+      if (line.includes('카드') && line.includes('승인')) return false;
+      if (line.endsWith('님') && line.length < 10) return false;
+      if (line.includes('총누적') || line.includes('누적액') || line.includes('잔액')) return false;
+      if (/^[0-9,]+원?\s*(일시불|할부)?$/.test(line)) return false;
+      if (/^[0-9]{2}\/[0-9]{2}\s*[0-9]{2}:[0-9]{2}$/.test(line)) return false;
+      return true;
+    });
+
+    if (validLines.length > 0) {
+      // 우리카드 등 상당수 문자는 마지막 라인이 가맹점명
+      const candidate = validLines[validLines.length - 1];
+      name = candidate.replace(/(?:가맹점|사용처|결제처|상호명|이용처)\s*:?\s*/, '').trim();
+      name = name.replace(/일시불/g, '').replace(/할부/g, '').replace(/[0-9,]+원?/g, '').trim();
     }
 
-    if (!name && dateMatch) {
-      const idx = text.indexOf(dateMatch[0]);
-      if (idx !== -1) {
-        const afterDate = text.substring(idx + dateMatch[0].length).trim();
-        let line = afterDate.split('\n')[0].trim();
-        line = line.replace(/^[0-9]{2}:[0-9]{2}/, '').trim();
-        line = line.replace(/일시불/g, '').replace(/할부/g, '').replace(/[0-9,]+원?/g, '').trim();
-        if (line && line.length >= 2) name = line;
+    if (!name) {
+      const merchantMatch = text.match(/(?:가맹점|사용처|결제처|상호명|이용처)\s*:?\s*([^\s\n]+)/);
+      if (merchantMatch) {
+        name = merchantMatch[1].trim();
       }
-    }
-
-    const merchantMatch = text.match(/(?:가맹점|사용처|결제처|상호명|이용처)\s*:?\s*([^\s\n]+)/);
-    if (merchantMatch) {
-      name = merchantMatch[1].trim();
     }
 
     if (name) {
       name = name.replace(/\(일시불\)/g, '').replace(/\(할부\)/g, '').replace(/[\(\)]/g, '').trim();
+    }
+
+    // --- 💡 자동 매핑 규칙 (Auto-Rule Mapper) ---
+    // IBK기업은행 + 점심시간대 (11시 ~ 14시 또는 시간 미상 기입시) -> '영민 점심(구내식당)'
+    if (name.includes('IBK기업은행') || name.includes('기업은행')) {
+      if (hourNum === null || (hourNum >= 11 && hourNum <= 14)) {
+        name = '영민 점심(구내식당)';
+      }
     }
 
     return { cardName, date: dateStr, amount, name: name || '카드 결제' };
