@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { clearFirebaseConfig } from '../firebase';
 import { dbService } from '../dbService';
-import { Shield, Database, User, Moon, Sun, Trash2, LogOut, CheckCircle2, UserPlus, HelpCircle } from 'lucide-react';
+import { Shield, Database, User, Moon, Sun, Trash2, LogOut, CheckCircle2, UserPlus, HelpCircle, Wallet } from 'lucide-react';
 
 export default function Settings({ 
   theme, 
@@ -11,7 +11,9 @@ export default function Settings({
   loginUser, 
   onLogout,
   startDay,
-  setStartDay
+  setStartDay,
+  showPocketMoneyTab,
+  setShowPocketMoneyTab
 }) {
   const [partnerEmail, setPartnerEmail] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -199,6 +201,27 @@ export default function Settings({
           <span style={{ fontSize: '14px' }}>현재 모드: {theme === 'dark' ? '다크 모드' : '라이트 모드'}</span>
           <button className="btn btn-secondary" onClick={toggleTheme}>
             테마 전환
+          </button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">
+          <span><Wallet size={18} style={{ marginRight: '6px', verticalAlign: 'middle', color: 'var(--accent-color)' }} />메뉴 탭 노출 설정</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h4 style={{ fontSize: '14px', margin: 0, fontWeight: '700' }}>용돈 관리 탭</h4>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', margin: 0 }}>
+              상단 메뉴바에 '용돈 관리' 탭을 표시할지 여부를 설정합니다.
+            </p>
+          </div>
+          <button 
+            className={`btn ${showPocketMoneyTab ? 'btn-primary' : 'btn-secondary'}`} 
+            onClick={() => setShowPocketMoneyTab(!showPocketMoneyTab)}
+            style={{ minWidth: '90px' }}
+          >
+            {showPocketMoneyTab ? '표시 중' : '숨김 중'}
           </button>
         </div>
       </div>

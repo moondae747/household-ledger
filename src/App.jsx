@@ -39,6 +39,17 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState('영민');
   const [theme, setTheme] = useState('light');
   
+  // 용돈 관리 탭 표시 여부 상태 (기본값: false 숨김)
+  const [showPocketMoneyTab, setShowPocketMoneyTab] = useState(() => {
+    const saved = localStorage.getItem('show_pocket_money_tab');
+    return saved !== null ? JSON.parse(saved) : false;
+  });
+
+  const handleSetShowPocketMoneyTab = (val) => {
+    setShowPocketMoneyTab(val);
+    localStorage.setItem('show_pocket_money_tab', JSON.stringify(val));
+  };
+  
   // 구글 로그인 보안 유저 객체 상태
   const [loginUser, setLoginUser] = useState(null);
   // 오프라인 로컬 모드로 시작했는지 여부
@@ -339,6 +350,8 @@ export default function App() {
             onLogout={handleLogout}
             startDay={startDay}
             setStartDay={setStartDay}
+            showPocketMoneyTab={showPocketMoneyTab}
+            setShowPocketMoneyTab={handleSetShowPocketMoneyTab}
           />
         );
       case 'todos':
@@ -414,15 +427,17 @@ export default function App() {
             >
               가계부 내역
             </div>
-            <div 
-              className={`nav-tab-item ${activeNav === 'pocket-money' ? 'active' : ''}`}
-              onClick={() => {
-                setPocketMoneyTargetUser(currentUser === '공동' ? '영민' : currentUser);
-                setActiveNav('pocket-money');
-              }}
-            >
-              용돈 관리
-            </div>
+            {showPocketMoneyTab && (
+              <div 
+                className={`nav-tab-item ${activeNav === 'pocket-money' ? 'active' : ''}`}
+                onClick={() => {
+                  setPocketMoneyTargetUser(currentUser === '공동' ? '영민' : currentUser);
+                  setActiveNav('pocket-money');
+                }}
+              >
+                용돈 관리
+              </div>
+            )}
             <div 
               className={`nav-tab-item ${activeNav === 'fixed-expenses' ? 'active' : ''}`}
               onClick={() => setActiveNav('fixed-expenses')}
