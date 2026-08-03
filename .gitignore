@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Production build artifacts
+dist/
+dist-ssr/
+build/
+
+# Firebase Cache/Log
+.firebase/
+firebase-debug.log
+ui-debug.log
+
+# Local env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Service account keys or private keys
+*.pem
+*.key
+*-key.json
+credentials.json
+service-account*.json
+
+# System files
+.DS_Store
+Thumbs.db
